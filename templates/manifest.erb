@@ -1,0 +1,79 @@
+<?xml version='1.0'?>
+<!DOCTYPE service_bundle SYSTEM '/usr/share/lib/xml/dtd/service_bundle.dtd.1'>
+
+<service_bundle type='manifest' name='<%= @name -%>'>
+
+      <service
+       name='application/kvm/<%= @name -%>'
+       type='service'
+       version='1'>
+
+       <!-- Wait for network interfaces to be initialized.  -->
+       <dependency
+        name='network'
+        grouping='require_all'
+        restart_on='none'
+        type='service'>
+        <service_fmri value='svc:/milestone/network:default' />
+       </dependency>
+
+       <!-- Wait for all local filesystems to be mounted.  -->
+       <dependency
+        name='filesystem-local'
+        grouping='require_all'
+        restart_on='none'
+        type='service'>
+        <service_fmri value='svc:/system/filesystem/local:default' />
+       </dependency>
+
+       <exec_method
+        type='method'
+        name='start'
+        exec='/usr/bin/qemu-system-x86_64
+             -enable-kvm
+             -no-hpet
+             -daemonize  
+             -vga std
+             -cpu <%= @cpu %>
+             -localtime -m <%= @memory_size %>
+             <%= !@vnc_port.nil? && !@vnc_host.nil? ? '-vnc %s:%s' % [@vnc_host, @vnc_port] : nil %>
+             <%- if @boot.is_a? Hash -%>
+             -boot <%- @boot.each do |key, value| -%><%= key -%>=<%= value -%><%- end %>
+             <%- end -%>
+             <%- @drive.enum_with_index do |disk, index| -%>
+             -drive index=<%= index -%>,<%= disk.map { |pairs| pairs.join('=') }.join(',') %>
+             <%- end -%>
+             <%- @net.enum_with_index do |nic, index| -%>
+             -net nic,name=net<%= index -%>,<%- nic_parts = nic.select do |key, _| 
+               ['macaddr', 'vlan', 'model'].include? key 
+             end -%><%= nic_parts.map {|pairs| pairs.join('=') }.join(',') %>
+             -net vnic,name=net<%= index -%>,<%- vnic_parts = nic.select do |key, _|
+               ['macaddr', 'vlan', 'ifname'].include? key
+             end -%><%= vnic_parts.map {|pairs| pairs.join('=') }.join(',') %>
+             <%- end -%>'
+        timeout_seconds='60' />
+
+       <exec_method
+        type='method'
+        name='stop'
+        exec=':kill'
+        timeout_seconds='60' />
+
+        <property_group name='startd' type='framework'>
+            <propval name='ignore_error' type='astring' value='core' />
+        </property_group>
+
+        <instance name='default' enabled='<%= @enable -%>' />
+
+        <stability value='Unstable' />
+
+        <template>
+                <common_name>
+                        <loctext xml:lang='C'>
+                        KVM VM: <%= @name -%>
+                        </loctext>
+                </common_name>
+        </template>
+        </service>
+</service_bundle>
+
